@@ -16,17 +16,15 @@
 
 #define LOG_TAG "bluedroid"
 
+#include <stdio.h>
+#include <stdlib.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
+#include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-
-#include <stdio.h>
-#include <stdlib.h>
-
-#include <sys/mman.h>
 
 #include <cutils/log.h>
 #include <cutils/properties.h>
@@ -134,67 +132,6 @@ static int set_bluetooth_power(int on) {
     sz = write(fd, &buffer, 1);
     if (sz < 0) {
         LOGE("write(%s) failed: %s (%d)", rfkill_state_path, strerror(errno),
-             errno);
-        goto out;
-    }
-    ret = 0;
-
-out:
-    if (fd >= 0) close(fd);
-    return ret;
-}
-
-static int pwr_ctl_id = -1;
-static char *pwr_ctl_state_path = NULL;
-
-static int init_pwr_ctl() {
-    char path[64];
-    char buf[16];
-    int fd;
-    int sz;
-    int id;
-    for (id = 0; ; id++) {
-        snprintf(path, sizeof(path), "/sys/class/rfkill/rfkill%d/type", id);
-        fd = open(path, O_RDONLY);
-        if (fd < 0) {
-            LOGW("open(%s) failed: %s (%d)\n", path, strerror(errno), errno);
-            return -1;
-        }
-        sz = read(fd, &buf, sizeof(buf));
-        close(fd);
-        if (sz >= 7 && memcmp(buf, "pwr_ctl", 7) == 0) {
-            pwr_ctl_id = id;
-            break;
-        }
-    }
-    if (pwr_ctl_id == -1)  {
-        LOGW("Can't find pwr_ctl");
-        return -1;
-    }
-    asprintf(&pwr_ctl_state_path, "/sys/class/rfkill/rfkill%d/state", pwr_ctl_id);
-    return 0;
-}
-
-int set_power_control(int on) {
-    int sz;
-    int fd = -1;
-    int ret = -1;
-    const char buffer = (on ? '1' : '0');
-
-    if (pwr_ctl_id == -1) {
-        /* It's ok if can't find pwr_ctl */
-        if (init_pwr_ctl()) goto out;
-    }
-
-    fd = open(pwr_ctl_state_path, O_WRONLY);
-    if (fd < 0) {
-        LOGE("open(%s) for write failed: %s (%d)", pwr_ctl_state_path,
-             strerror(errno), errno);
-        goto out;
-    }
-    sz = write(fd, &buffer, 1);
-    if (sz < 0) {
-        LOGE("write(%s) failed: %s (%d)", pwr_ctl_state_path, strerror(errno),
              errno);
         goto out;
     }
@@ -411,9 +348,6 @@ int bt_enable() {
         goto out;
     }
 
-    /* set PWM mode */
-    set_power_control(1);
-
 #ifdef BOARD_BLUETOOTH_SERVICE
     LOGI("Starting bluetooth service \"%s\"", BLUETOOTH_SERVICE);
     if (property_set("ctl.start", BLUETOOTH_SERVICE) < 0) {
@@ -497,13 +431,9 @@ int bt_disable() {
         goto out;
     }
 
-    /* set PFM mode */
-    set_power_control(0);
-
     if (set_bluetooth_power(0) < 0) {
         goto out;
     }
-
     ret = 0;
 
 out:
@@ -531,6 +461,7 @@ int bt_is_enabled() {
 
     dev_info.dev_id = HCI_DEV_ID;
     if (ioctl(hci_sock, HCIGETDEVINFO, (void *)&dev_info) < 0) {
+        ret = 0;
         goto out;
     }
 

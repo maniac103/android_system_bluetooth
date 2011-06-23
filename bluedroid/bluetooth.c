@@ -353,6 +353,7 @@ int bt_enable() {
     LOGI("Starting bluetooth service \"%s\"", BLUETOOTH_SERVICE);
     if (property_set("ctl.start", BLUETOOTH_SERVICE) < 0) {
         LOGE("Failed to start bluetooth service \"%s\"", BLUETOOTH_SERVICE);
+        set_bluetooth_power(0);
         goto out;
     }
 #endif
